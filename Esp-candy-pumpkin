@@ -1,0 +1,142 @@
+local Players = game:GetService("Players")
+
+local player = Players.LocalPlayer
+
+-- Object Names
+local CANDY_NAME = "C00lCandy"
+local PUMPKIN_NAME = "Pumpkin"
+
+local HIGHLIGHT_NAME = "ESP_Highlight"
+local ESP_NAME = "ESP_Billboard"
+
+-- Validates if an instance is a valid Candy
+local function isCandy(instance)
+	return instance:IsA("Model")
+		and instance.Name == CANDY_NAME
+		and instance:GetAttribute("Collected") ~= true
+end
+
+-- Validates if an instance is a real Pumpkin (strictly checks for "HitMe" inside)[span_2](start_span)[span_2](end_span)[span_3](start_span)[span_3](end_span)
+local function isPumpkin(instance)
+	if instance.Name == PUMPKIN_NAME and instance:IsA("Model") then
+		if instance:FindFirstChild("HitMe") then
+			return true
+		end
+	end
+	return false
+end
+
+-- Identifies the object type
+local function getObjectType(instance)
+	if isCandy(instance) then
+		return "Candy"
+	elseif isPumpkin(instance) then
+		return "Pumpkin"
+	end
+	return nil
+end
+
+-- Clears all ESP elements associated with an object
+local function clearESP(instance)
+	local existingHighlight = instance:FindFirstChild(HIGHLIGHT_NAME)
+	if existingHighlight then
+		existingHighlight:Destroy()
+	end
+	
+	local existingBillboard = instance:FindFirstChild(ESP_NAME)
+	if existingBillboard then
+		existingBillboard:Destroy()
+	end
+end
+
+-- Creates or updates ESPs (Highlight and Name)
+local function createESP(instance)
+	local itemType = getObjectType(instance)
+	
+	if not itemType then
+		clearESP(instance)
+		return
+	end
+
+	-- Custom colors per object type
+	local color = (itemType == "Candy") and Color3.fromRGB(255, 170, 40) or Color3.fromRGB(255, 110, 0)
+	local labelText = itemType
+
+	-- 1. Highlight (3D Outline + Fill)
+	if not instance:FindFirstChild(HIGHLIGHT_NAME) then
+		local highlight = Instance.new("Highlight")
+		highlight.Name = HIGHLIGHT_NAME
+		highlight.Adornee = instance
+		highlight.FillColor = color
+		highlight.OutlineColor = Color3.fromRGB(255, 255, 255)
+		highlight.FillTransparency = 0.5
+		highlight.OutlineTransparency = 0
+		highlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+		highlight.Parent = instance
+	end
+
+	-- 2. ESP Name (Compact BillboardGui)
+	if not instance:FindFirstChild(ESP_NAME) then
+		local billboard = Instance.new("BillboardGui")
+		billboard.Name = ESP_NAME
+		billboard.Adornee = instance
+		billboard.Size = UDim2.new(0, 100, 0, 30)
+		billboard.StudsOffset = Vector3.new(0, 2, 0)
+		billboard.AlwaysOnTop = true
+		
+		local textLabel = Instance.new("TextLabel")
+		textLabel.Size = UDim2.new(1, 0, 1, 0)
+		textLabel.BackgroundTransparency = 1
+		textLabel.TextColor3 = color
+		textLabel.TextStrokeTransparency = 0.4
+		textLabel.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
+		textLabel.Font = Enum.Font.GothamBold
+		textLabel.TextSize = 13
+		textLabel.Text = labelText
+		textLabel.Parent = billboard
+
+		billboard.Parent = instance
+	end
+end
+
+-- Tracks targets (Candies or valid Pumpkins)
+local function trackTarget(instance)
+	if instance.Name == CANDY_NAME or instance.Name == PUMPKIN_NAME then
+		if isCandy(instance) or isPumpkin(instance) then
+			createESP(instance)
+			
+			local conn
+			conn = instance:GetAttributeChangedSignal("Collected"):Connect(function()
+				if instance:GetAttribute("Collected") == true then
+					clearESP(instance)
+					if conn then conn:Disconnect() end
+				else
+					createESP(instance)
+				end
+			end)
+			
+			instance.Destroying:Connect(function()
+				clearESP(instance)
+				if conn then conn:Disconnect() end
+			end)
+		end
+	end
+end
+
+local function refresh()
+	for _, descendant in workspace:GetDescendants() do
+		trackTarget(descendant)
+	end
+end
+
+-- Monitors newly spawned objects in the world
+workspace.DescendantAdded:Connect(trackTarget)
+
+-- Persistence after player respawn/reset
+player.CharacterAdded:Connect(function()
+	task.wait(1)
+	refresh()
+end)
+
+-- Initial scan upon injection
+refresh()
